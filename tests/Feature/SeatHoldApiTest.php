@@ -84,4 +84,25 @@ class SeatHoldApiTest extends TestCase
         $response->assertStatus(201);
         $this->assertDatabaseHas('seat_holds', ['holder_ref' => 'user-b']);
     }
+
+    public function test_expired_hold_is_reported_as_available_in_seat_map(): void
+    {
+        $this->seed();
+
+        $showtimeSeat = ShowtimeSeat::query()->where('showtime_id', 1)->where('seat_id', 1)->firstOrFail();
+        $showtimeSeat->update(['status' => 'HELD']);
+
+        SeatHold::query()->create([
+            'hold_ref' => '00000000-0000-0000-0000-000000000001',
+            'showtime_seat_id' => $showtimeSeat->id,
+            'holder_ref' => 'user-expired',
+            'status' => 'ACTIVE',
+            'expires_at' => Carbon::now()->subMinute(),
+        ]);
+
+        $response = $this->getJson('/api/showtimes/1/seats');
+
+        $response->assertOk();
+        $this->assertSame('AVAILABLE', $response->json('seats.0.status'));
+    }
 }

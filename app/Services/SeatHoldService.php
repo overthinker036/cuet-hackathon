@@ -12,6 +12,39 @@ use RuntimeException;
 
 class SeatHoldService
 {
+    public function reconcileSeatStatus(ShowtimeSeat $showtimeSeat): void
+    {
+        $activeHold = $showtimeSeat->holds()
+            ->where('status', 'ACTIVE')
+            ->orderByDesc('expires_at')
+            ->first();
+
+        if ($showtimeSeat->status === 'BOOKED') {
+            return;
+        }
+
+        if ($activeHold && $activeHold->expires_at->isFuture()) {
+            if ($showtimeSeat->status !== 'HELD') {
+                $showtimeSeat->update(['status' => 'HELD']);
+            }
+
+            return;
+        }
+
+        $expiredHolds = $showtimeSeat->holds()
+            ->where('status', 'ACTIVE')
+            ->where('expires_at', '<=', now())
+            ->get();
+
+        foreach ($expiredHolds as $expiredHold) {
+            $expiredHold->update(['status' => 'EXPIRED']);
+        }
+
+        if ($showtimeSeat->status !== 'AVAILABLE') {
+            $showtimeSeat->update(['status' => 'AVAILABLE']);
+        }
+    }
+
     public function holdForShowtimeSeat(int $showtimeId, int $seatId, string $holderRef): array
     {
         return DB::transaction(function () use ($showtimeId, $seatId, $holderRef) {
@@ -25,21 +58,15 @@ class SeatHoldService
                 throw (new ModelNotFoundException())->setModel(ShowtimeSeat::class, [$showtimeId, $seatId]);
             }
 
-            $activeHold = $showtimeSeat->holds()
-                ->where('status', 'ACTIVE')
-                ->orderByDesc('expires_at')
-                ->first();
+            $this->reconcileSeatStatus($showtimeSeat);
+            $showtimeSeat->refresh();
 
             if ($showtimeSeat->status === 'BOOKED') {
                 throw new RuntimeException('Seat is already booked.', 409);
             }
 
-            if ($showtimeSeat->status === 'HELD' && $activeHold && $activeHold->expires_at->isFuture()) {
+            if ($showtimeSeat->status === 'HELD') {
                 throw new RuntimeException('Seat is currently held.', 409);
-            }
-
-            if ($showtimeSeat->status === 'HELD' && $activeHold && $activeHold->expires_at->isPast()) {
-                $activeHold->update(['status' => 'EXPIRED']);
             }
 
             $expiresAt = CarbonImmutable::now()->addSeconds((int) config('booking.hold_ttl_seconds', 300));

@@ -4,13 +4,23 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Showtime;
+use App\Services\SeatHoldService;
 use Illuminate\Http\JsonResponse;
 
 class ShowtimeSeatController extends Controller
 {
+    public function __construct(
+        protected SeatHoldService $seatHoldService,
+    ) {}
+
     public function index(Showtime $showtime): JsonResponse
     {
         $showtime->load(['showtimeSeats.seat', 'showtimeSeats']);
+
+        foreach ($showtime->showtimeSeats as $showtimeSeat) {
+            $this->seatHoldService->reconcileSeatStatus($showtimeSeat);
+            $showtimeSeat->refresh();
+        }
 
         $seats = $showtime->showtimeSeats
             ->sortBy(fn ($showtimeSeat) => [$showtimeSeat->seat->row_label, $showtimeSeat->seat->seat_number])
