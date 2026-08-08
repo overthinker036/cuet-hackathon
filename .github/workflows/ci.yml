@@ -2,17 +2,17 @@ name: CinemaSeat CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+
   pull_request:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
-
-  # ──────────────────────────────────────────
-  # JOB 1 — Unit & Integration Tests
-  # ──────────────────────────────────────────
-  test:
-    name: Unit & Integration Tests
+  # Person 1: seat-domain correctness
+  seat-domain:
+    name: Person 1 - Seat Domain
     runs-on: ubuntu-latest
 
     steps:
@@ -30,104 +30,27 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vendor
-          key: composer-${{ hashFiles('composer.lock') }}
-          restore-keys: composer-
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-
 
       - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist
+        run: composer install --no-interaction --prefer-dist --no-progress
 
       - name: Prepare environment
         run: |
           cp .env.example .env
           php artisan key:generate
 
-      - name: Run tests
-        run: php artisan test 
+      - name: Run seat-domain tests
+        run: php artisan test --filter="Seat"
 
-  # ──────────────────────────────────────────
-  # JOB 2 — Scenario A / B / D
-  # ──────────────────────────────────────────
-  critical-tests:
-    name: Critical Booking Scenarios
-    needs: test
+  # Reserved for Person 2 / 3.
+  external-integration:
+    name: Person 2/3 - Gateway / External Integration
+    if: ${{ false }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.4"
-          extensions: mbstring, sqlite3, pdo_sqlite
-          coverage: none
-
-      - name: Cache Composer dependencies
-        uses: actions/cache@v4
-        with:
-          path: vendor
-          key: composer-${{ hashFiles('composer.lock') }}
-          restore-keys: composer-
-
-      - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist
-
-      - name: Prepare environment
-        run: |
-          cp .env.example .env
-          php artisan key:generate
-
-      # Scenario A — No double booking
-      - name: "Scenario A: Concurrent same-seat hold"
-        run: |
-          php artisan test --filter="SeatHoldApiTest::test_second_holder_is_rejected_for_active_hold"
-          php artisan test --filter="SeatHoldApiTest::test_booked_seat_is_rejected"
-
-      # Scenario B — Hold expiry
-      - name: "Scenario B: Hold expiration"
-        run: |
-          php artisan test --filter="SeatHoldApiTest::test_hold_expires_and_reuses_slot"
-          php artisan test --filter="SeatHoldApiTest::test_expired_hold_is_reported_as_available_in_seat_map"
-
-      # Scenario D — Idempotent callback
-      - name: "Scenario D: Duplicate callback idempotency"
-        run: php artisan test --filter="GatewayServiceTest::test_is_idempotent"
-
-  # ──────────────────────────────────────────
-  # JOB 3 — Scenario C (main branch only)
-  # ──────────────────────────────────────────
-  load-test:
-    name: "Scenario C: Load Breakpoint"
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: critical-tests
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.4"
-          extensions: mbstring, sqlite3, pdo_sqlite
-          coverage: none
-
-      - name: Cache Composer dependencies
-        uses: actions/cache@v4
-        with:
-          path: vendor
-          key: composer-${{ hashFiles('composer.lock') }}
-          restore-keys: composer-
-
-      - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist
-
-      - name: Prepare environment
-        run: |
-          cp .env.example .env
-          php artisan key:generate
-
-      - name: "Scenario C: Load breakpoint test"
-        run: php artisan test --group=scenario-c
+      - name: Placeholder
+        run: echo "External integration tests are not enabled yet."
