@@ -42,7 +42,7 @@ jobs:
           php artisan key:generate
 
       - name: Run tests
-        run: php artisan test --parallel
+        run: php artisan test 
 
   # ──────────────────────────────────────────
   # JOB 2 — Scenario A / B / D
