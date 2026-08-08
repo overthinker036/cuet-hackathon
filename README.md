@@ -1,58 +1,133 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# CinemaSeat
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+This repository is the current Person 1 seat-core implementation for the CinemaSeat hackathon challenge.
 
-## About Laravel
+## Current responsibility scope
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+Person 1 owns the seat-domain flow only:
+- cinema catalogue data
+- theatres, movies, showtimes, and seats
+- seat map APIs
+- atomic seat holds
+- hold expiration and reuse
+- seat-domain tests
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+This does not include booking, payment, OTP, gateway webhooks, CI/CD, deployment, or frontend work.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Current state
 
-## Learning Laravel
+The project is a Laravel modular monolith using PostgreSQL-compatible schema conventions and Eloquent models. The seat-domain layer is implemented and validated with Laravel feature tests.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+## Database model
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+The following tables are present and seeded:
+- movies
+- theatres
+- seats
+- showtimes
+- showtime_seats
+- seat_holds
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+Core design decisions:
+- `showtime_seats` stores the per-showtime seat state
+- `seat_holds` records hold history and expiry
+- `showtime_seats.status` is the authoritative row-level seat state for the seat-domain flow
+- hold expiry is reconciled before reads and before new holds are accepted
 
-## Agentic Development
+## Seeded sample data
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+The app seeds:
+- 2 movies
+- 1 theatre
+- 40 seats
+- 3 showtimes
+- 120 showtime-seat rows
+
+This gives a realistic default cinema layout for the seat-map and hold flow without requiring an admin portal.
+
+## API contract
+
+### Seat map
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+GET /api/movies
+GET /api/movies/{movie}/showtimes
+GET /api/showtimes/{showtime}/seats
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+### Hold a seat
 
-## Contributing
+```bash
+POST /api/showtimes/{showtime}/seats/{seat}/hold
+Content-Type: application/json
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+{
+  "holder_ref": "user-a"
+}
+```
 
-## Code of Conduct
+Successful response example:
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```json
+{
+  "hold_ref": "...uuid...",
+  "showtime": 1,
+  "seat": 1,
+  "status": "HELD",
+  "expires_at": "2026-08-08T12:34:56.000000Z"
+}
+```
 
-## Security Vulnerabilities
+Expected behavior:
+- available seat: 201
+- duplicate hold on same seat: 409
+- booked seat: 409
+- mismatched showtime/seat: 404
+- expired hold becomes reusable without scheduler dependence
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Hold expiration rule
 
-## License
+The system treats a seat as logically available when:
+- `showtime_seats.status == HELD`
+- and the active hold is expired
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+This is reconciled during:
+- new hold attempts
+- seat map reads
+
+This avoids depending entirely on scheduler cleanup and keeps the domain correct even when stale records exist.
+
+## Configuration
+
+TTL is configured through:
+
+```env
+HOLD_TTL_SECONDS=300
+```
+
+## Verification status
+
+The current seat-domain feature tests pass with:
+
+```bash
+php artisan test --filter='SeatHoldApiTest|SeatMapApiTest|SeatDomainSchemaTest'
+```
+
+Evidence from the latest run:
+- 9 tests passed
+- 296 assertions
+- successful exit
+
+## File highlights
+
+Key files in the current seat-domain implementation:
+- [database/migrations/2026_08_08_000001_create_cinema_schema.php](database/migrations/2026_08_08_000001_create_cinema_schema.php)
+- [app/Services/SeatHoldService.php](app/Services/SeatHoldService.php)
+- [app/Http/Controllers/Api/ShowtimeSeatController.php](app/Http/Controllers/Api/ShowtimeSeatController.php)
+- [app/Http/Controllers/Api/SeatHoldController.php](app/Http/Controllers/Api/SeatHoldController.php)
+- [routes/api.php](routes/api.php)
+- [tests/Feature/SeatHoldApiTest.php](tests/Feature/SeatHoldApiTest.php)
+
+## Next responsibility
+
+The next focus is the stronger concurrency review and validation against the required 100-request same-seat contention model, with the understanding that Person 2 owns payment, OTP, gateway, and checkout logic and Person 3 owns deployment and proof tooling.
