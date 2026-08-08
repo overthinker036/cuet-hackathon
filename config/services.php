@@ -34,5 +34,12 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+    'gateway' => [
+    'url' => env('GATEWAY_URL', 'http://localhost:9000'),
+    'secret' => env('GATEWAY_SECRET', 'z2p-2026-secret'),
+    'timeout' => env('GATEWAY_TIMEOUT', 10),
+],
 
 ];
+
+
